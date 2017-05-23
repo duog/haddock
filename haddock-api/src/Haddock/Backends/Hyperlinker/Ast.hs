@@ -2,12 +2,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeApplications #-}
+
 
 module Haddock.Backends.Hyperlinker.Ast (enrich) where
 
 
-import qualified Haddock.Syb as Syb
+import Haddock.Syb
 import Haddock.Backends.Hyperlinker.Types
 
 import qualified GHC
@@ -16,9 +16,6 @@ import Control.Applicative
 import Data.Data
 import Data.Maybe
 
-everythingImportantInRenamedSource :: (Alternative f, Data x)
-  => (forall a. Data a => a -> f r) -> x -> f r
-everythingImportantInRenamedSource f = Syb.everythingButType @GHC.Name (<|>) f
 
 -- | Add more detailed information to token stream using GHC API.
 enrich :: GHC.RenamedSource -> [Token] -> [RichToken]
@@ -56,7 +53,7 @@ enrichToken _ _ = Nothing
 -- | Obtain details map for variables ("normally" used identifiers).
 variables :: GHC.RenamedSource -> DetailsMap
 variables =
-    everythingImportantInRenamedSource (var `Syb.combine` rec)
+    everything (<|>) (var `combine` rec)
   where
     var term = case cast term of
         (Just (GHC.L sspan (GHC.HsVar name))) ->
@@ -71,7 +68,8 @@ variables =
 
 -- | Obtain details map for types.
 types :: GHC.RenamedSource -> DetailsMap
-types = everythingImportantInRenamedSource ty
+types =
+    everything (<|>) ty
   where
     ty term = case cast term of
         (Just (GHC.L sspan (GHC.HsTyVar _ name))) ->
@@ -83,10 +81,9 @@ types = everythingImportantInRenamedSource ty
 -- That includes both identifiers bound by pattern matching or declared using
 -- ordinary assignment (in top-level declarations, let-expressions and where
 -- clauses).
-
 binds :: GHC.RenamedSource -> DetailsMap
-binds = everythingImportantInRenamedSource
-      (fun `Syb.combine` pat `Syb.combine` tvar)
+binds =
+    everything (<|>) (fun `combine` pat `combine` tvar)
   where
     fun term = case cast term of
         (Just (GHC.FunBind (GHC.L sspan name) _ _ _ _ :: GHC.HsBind GHC.Name)) ->
@@ -96,7 +93,7 @@ binds = everythingImportantInRenamedSource
         (Just (GHC.L sspan (GHC.VarPat name))) ->
             pure (sspan, RtkBind (GHC.unLoc name))
         (Just (GHC.L _ (GHC.ConPatIn (GHC.L sspan name) recs))) ->
-            [(sspan, RtkVar name)] ++ everythingImportantInRenamedSource rec recs
+            [(sspan, RtkVar name)] ++ everything (<|>) rec recs
         (Just (GHC.L _ (GHC.AsPat (GHC.L sspan name) _))) ->
             pure (sspan, RtkBind name)
         _ -> empty
@@ -115,8 +112,8 @@ binds = everythingImportantInRenamedSource
 decls :: GHC.RenamedSource -> DetailsMap
 decls (group, _, _, _) = concatMap ($ group)
     [ concat . map typ . concat . map GHC.group_tyclds . GHC.hs_tyclds
-    , everythingImportantInRenamedSource fun . GHC.hs_valds
-    , everythingImportantInRenamedSource (con `Syb.combine` ins)
+    , everything (<|>) fun . GHC.hs_valds
+    , everything (<|>) (con `combine` ins)
     ]
   where
     typ (GHC.L _ t) = case t of
@@ -130,8 +127,7 @@ decls (group, _, _, _) = concatMap ($ group)
         _ -> empty
     con term = case cast term of
         (Just cdcl) ->
-            map decl (GHC.getConNames cdcl)
-              ++ everythingImportantInRenamedSource fld cdcl
+            map decl (GHC.getConNames cdcl) ++ everything (<|>) fld cdcl
         Nothing -> empty
     ins term = case cast term of
         (Just (GHC.DataFamInstD inst)) -> pure . tyref $ GHC.dfid_tycon inst
@@ -153,7 +149,7 @@ decls (group, _, _, _) = concatMap ($ group)
 -- import lists.
 imports :: GHC.RenamedSource -> DetailsMap
 imports src@(_, imps, _, _) =
-    everythingImportantInRenamedSource ie src ++ mapMaybe (imp . GHC.unLoc) imps
+    everything (<|>) ie src ++ mapMaybe (imp . GHC.unLoc) imps
   where
     ie term = case cast term of
         (Just (GHC.IEVar v)) -> pure $ var $ GHC.ieLWrappedName v

@@ -1,11 +1,11 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeApplications #-}
-
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Haddock.Syb
-    ( everything, everythingWithState
-    , everywhere, everywhereBut, everywhereButType
+  ( everything, {-everythingBut, everythingButType, -}everythingWithState
+    , everywhere
     , mkT
     , combine
     ) where
@@ -18,35 +18,15 @@ import Data.Maybe
 -- | Returns true if a /= t.
 -- requires AllowAmbiguousTypes
 is_t :: forall t a. (Typeable t, Typeable a) => a -> Bool
-is_t _ = isJust $ eqT @s @t
+is_t _ = isJust $ eqT @t @a
 
 -- | Perform a query on each level of a tree.
 --
 -- This is stolen directly from SYB package and copied here to not introduce
 -- additional dependencies.
-everything :: (r -> r -> r)
-           -> (forall a. Data a => a -> r)
+everything :: (r -> r -> r) -> (forall a. Data a => a -> r)
            -> (forall a. Data a => a -> r)
 everything k f x = foldl k (f x) (gmapQ (everything k f) x)
-
--- | Variation of "everything" with an added stop condition
--- Just like 'everything', this is stolen from SYB package.
-everythingBut :: (r -> r -> r)
-              -> (forall a. Data a => a -> (r, Bool))
-              -> (forall a. Data a => a -> r)
-everythingBut k f x = let (v, stop) = f x
-                      in if stop
-                           then v
-                           else foldl k v (gmapQ (everythingBut k f) x)
-
-
--- | Variation of "everything" that does not recurse into children of type t
--- requires AllowAmbiguousTypes
-everythingButType :: forall t r. Typeable t
-                  => (r -> r -> r)
-                  -> (forall a. Data a => a -> r)
-                  -> (forall a. Data a => a -> r)
-everythingButType k f = everythingBut k $ (,) <$> f <*> is_t @t
 
 
 -- | Perform a query with state on each level of a tree.
