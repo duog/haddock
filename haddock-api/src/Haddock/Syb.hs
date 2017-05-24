@@ -4,8 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Haddock.Syb
-    ( everything, everythingBut, everythingButType, everythingWithState
-    , everywhere
+    ( everything, everythingButType, everythingWithState
+    , everywhere, everywhereButType
     , mkT
     , combine
     ) where
@@ -14,11 +14,13 @@ module Haddock.Syb
 import Data.Data
 import Control.Applicative
 import Data.Maybe
+import Data.Foldable
+import SrcLoc as GHC
 
 -- | Returns true if a /= t.
 -- requires AllowAmbiguousTypes
-is_t :: forall a b. (Typeable a, Typeable b) => b -> Bool
-is_t _ = isJust $ eqT @a @b
+isType :: forall a b. (Typeable a, Typeable b) => b -> Bool
+isType _ = isJust $ eqT @a @b
 
 -- | Perform a query on each level of a tree.
 --
@@ -27,7 +29,7 @@ is_t _ = isJust $ eqT @a @b
 everything :: (r -> r -> r)
            -> (forall a. Data a => a -> r)
            -> (forall a. Data a => a -> r)
-everything k f x = foldl k (f x) (gmapQ (everything k f) x)
+everything k f x = foldl' k (f x) (gmapQ (everything k f) x)
 
 -- | Variation of "everything" with an added stop condition
 -- Just like 'everything', this is stolen from SYB package.
@@ -37,17 +39,16 @@ everythingBut :: (r -> r -> r)
 everythingBut k f x = let (v, stop) = f x
                       in if stop
                            then v
-                           else foldl k v (gmapQ (everythingBut k f) x)
-
+                           else foldl' k v (gmapQ (everythingBut k f) x)
 
 -- | Variation of "everything" that does not recurse into children of type t
 -- requires AllowAmbiguousTypes
-everythingButType :: forall t r. Typeable t
-                  => (r -> r -> r)
-                  -> (forall a. Data a => a -> r)
-                  -> (forall a. Data a => a -> r)
-everythingButType k f = everythingBut k $ (,) <$> f <*> is_t @t
-
+everythingButType ::
+  forall t r. (Typeable t)
+  => (r -> r -> r)
+  -> (forall a. Data a => a -> r)
+  -> (forall a. Data a => a -> r)
+everythingButType k f = everythingBut k $ (,) <$> f <*> isType @t
 
 -- | Perform a query with state on each level of a tree.
 --
@@ -59,14 +60,29 @@ everythingWithState :: s -> (r -> r -> r)
                     -> (forall a. Data a => a -> r)
 everythingWithState s k f x =
     let (r, s') = f x s
-    in foldl k r (gmapQ (everythingWithState s' k f) x)
-
+    in foldl' k r (gmapQ (everythingWithState s' k f) x)
 
 -- | Apply transformation on each level of a tree.
 --
 -- Just like 'everything', this is stolen from SYB package.
 everywhere :: (forall a. Data a => a -> a) -> (forall a. Data a => a -> a)
 everywhere f = f . gmapT (everywhere f)
+
+-- | Variation on everywhere with an extra stop condition
+-- Just like 'everything', this is stolen from SYB package.
+everywhereBut :: (forall a. Data a => a -> Bool)
+  -> (forall a. Data a => a -> a)
+  -> (forall a. Data a => a -> a)
+everywhereBut q f x
+    | q x       = x
+    | otherwise = f (gmapT (everywhereBut q f) x)
+
+-- | Variation of "everywhere" that does not recurse into children of type t
+-- requires AllowAmbiguousTypes
+everywhereButType :: forall t . (Typeable t)
+  => (forall a. Data a => a -> a)
+  -> (forall a. Data a => a -> a)
+everywhereButType = everywhereBut (isType @t)
 
 -- | Create generic transformation.
 --

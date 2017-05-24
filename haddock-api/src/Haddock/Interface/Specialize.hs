@@ -2,6 +2,7 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeApplications #-}
 
 
 module Haddock.Interface.Specialize
@@ -29,19 +30,17 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 
 -- | Instantiate all occurrences of given names with corresponding types.
---
--- It is just a convenience function wrapping 'specialize' that supports more
--- that one specialization.
 specialize :: forall name a. (Ord name, DataId name, NamedThing name)
             => Data a
             => [(name, HsType name)] -> a -> a
 specialize specs = go
   where
     go :: forall x. Data x => x -> x
-    go = everywhere $ mkT $ sugar . step
-    step (HsTyVar _ (L _ name')) | Just t <- Map.lookup name' spec_map = t
-    step typ = typ
-    -- | This is a tricky recursive definition that is guaranteed to terminate
+    go = everywhereButType @name $ mkT $ sugar . specialize_ty_var
+    specialize_ty_var (HsTyVar _ (L _ name'))
+      | Just t <- Map.lookup name' spec_map = t
+    specialize_ty_var typ = typ
+    -- This is a tricky recursive definition that is guaranteed to terminate
     -- because a type binder cannot be instantiated with a type that depends
     -- on that binder. i.e. @a -> Maybe a@ is invalid
     spec_map = Map.fromList [ (n, go t) | (n, t) <- specs]
