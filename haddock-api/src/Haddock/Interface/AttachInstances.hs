@@ -25,6 +25,7 @@ import Data.Ord (comparing)
 import Data.Maybe ( maybeToList, mapMaybe, fromMaybe )
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Control.Monad
 
 import Class
 import DynFlags
